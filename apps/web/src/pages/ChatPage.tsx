@@ -1,5 +1,5 @@
 import { FormEvent, useEffect, useRef, useState } from "react";
-import { api, ApiError } from "../api/client";
+import { Agent, api, ApiError } from "../api/client";
 
 interface DisplayMessage {
   id: string;
@@ -8,15 +8,23 @@ interface DisplayMessage {
   toolTrace?: string;
 }
 
+function welcomeMessage(agent: Agent): DisplayMessage {
+  return {
+    id: "welcome",
+    role: "assistant",
+    content: `I'm ${agent.name}. ${agent.description ?? ""}`.trim(),
+  };
+}
+
+function avatarLabel(agentKey: string): string {
+  // 'cmo_agent' -> 'CMO'
+  return agentKey.split("_")[0].toUpperCase();
+}
+
 export default function ChatPage({ onLogout }: { onLogout: () => void }) {
-  const [messages, setMessages] = useState<DisplayMessage[]>([
-    {
-      id: "welcome",
-      role: "assistant",
-      content:
-        "I'm SHADOW CMO. Ask me anything about marketing/growth, or paste a LinkedIn company post and ask me to score it as a lead — I'll use the score_lead tool rather than guessing.",
-    },
-  ]);
+  const [agents, setAgents] = useState<Agent[]>([]);
+  const [activeAgentKey, setActiveAgentKey] = useState<string>("cmo_agent");
+  const [messages, setMessages] = useState<DisplayMessage[]>([]);
   const [conversationId, setConversationId] = useState<string | undefined>();
   const [input, setInput] = useState("");
   const [sending, setSending] = useState(false);
@@ -24,8 +32,35 @@ export default function ChatPage({ onLogout }: { onLogout: () => void }) {
   const logRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
+    api
+      .listAgents()
+      .then((list) => {
+        setAgents(list);
+        const initial = list.find((a) => a.agent_key === activeAgentKey) ?? list[0];
+        if (initial) {
+          setActiveAgentKey(initial.agent_key);
+          setMessages([welcomeMessage(initial)]);
+        }
+      })
+      .catch((err) => {
+        setError(err instanceof ApiError ? err.message : "Failed to load agents.");
+      });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
     logRef.current?.scrollTo({ top: logRef.current.scrollHeight });
   }, [messages]);
+
+  const activeAgent = agents.find((a) => a.agent_key === activeAgentKey);
+
+  function switchAgent(agent: Agent) {
+    if (agent.agent_key === activeAgentKey || sending) return;
+    setActiveAgentKey(agent.agent_key);
+    setConversationId(undefined);
+    setMessages([welcomeMessage(agent)]);
+    setError(null);
+  }
 
   async function handleSend(e: FormEvent) {
     e.preventDefault();
@@ -39,7 +74,7 @@ export default function ChatPage({ onLogout }: { onLogout: () => void }) {
 
     try {
       const res = await api.sendMessage({
-        agentKey: "cmo_agent",
+        agentKey: activeAgentKey,
         content: userMsg.content,
         conversationId,
       });
@@ -71,7 +106,16 @@ export default function ChatPage({ onLogout }: { onLogout: () => void }) {
     <div className="app-shell">
       <aside className="sidebar">
         <div className="brand">SHADOW</div>
-        <div className="nav-item active">Chat — CMO</div>
+        {agents.map((agent) => (
+          <div
+            key={agent.agent_key}
+            className={`nav-item${agent.agent_key === activeAgentKey ? " active" : ""}`}
+            onClick={() => switchAgent(agent)}
+            style={{ cursor: "pointer" }}
+          >
+            Chat — {avatarLabel(agent.agent_key)}
+          </div>
+        ))}
         <div className="nav-item">Dashboard</div>
         <div className="nav-item">Tasks</div>
         <div className="nav-item">Knowledge</div>
@@ -84,11 +128,11 @@ export default function ChatPage({ onLogout }: { onLogout: () => void }) {
 
       <main className="main">
         <div className="agent-header">
-          <div className="agent-avatar">CMO</div>
+          <div className="agent-avatar">{avatarLabel(activeAgentKey)}</div>
           <div>
-            <div style={{ fontWeight: 700 }}>SHADOW CMO</div>
+            <div style={{ fontWeight: 700 }}>{activeAgent?.name ?? "SHADOW"}</div>
             <div style={{ fontSize: 12, color: "var(--text-muted)" }}>
-              Growth &amp; marketing executive — Advisory autonomy
+              {activeAgent?.role ?? "Executive agent"} — Advisory autonomy
             </div>
           </div>
         </div>
@@ -101,14 +145,14 @@ export default function ChatPage({ onLogout }: { onLogout: () => void }) {
                 {m.toolTrace && <div className="tool-trace">{m.toolTrace}</div>}
               </div>
             ))}
-            {sending && <div className="msg assistant">SHADOW CMO is thinking…</div>}
+            {sending && <div className="msg assistant">{activeAgent?.name ?? "SHADOW"} is thinking…</div>}
           </div>
 
           {error && <div className="error-banner">{error}</div>}
 
           <form className="composer" onSubmit={handleSend}>
             <textarea
-              placeholder="Ask SHADOW CMO, or paste a LinkedIn post and ask for a lead score…"
+              placeholder={`Ask ${activeAgent?.name ?? "SHADOW"} anything in its domain…`}
               value={input}
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={(e) => {

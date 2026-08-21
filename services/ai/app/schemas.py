@@ -34,3 +34,13 @@ class ScoreLeadRequest(BaseModel):
     organization_id: str
     company_name: str
     source_text: str
+
+
+class EvaluateInvestmentRequest(BaseModel):
+    organization_id: str
+    initiative_name: str
+    initial_cost: float
+    monthly_cost: float = 0.0
+    expected_monthly_revenue: float = 0.0
+    expected_monthly_savings: float = 0.0
+    horizon_months: int = 12
