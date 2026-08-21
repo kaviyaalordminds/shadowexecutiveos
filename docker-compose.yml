@@ -1,0 +1,24 @@
+version: "3.9"
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: shadow_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: shadow
+      POSTGRES_PASSWORD: shadow_dev_password
+      POSTGRES_DB: shadow_os
+    ports:
+      - "5433:5432"
+    volumes:
+      - shadow_pg_data:/var/lib/postgresql/data
+      - ./database/migrations:/docker-entrypoint-initdb.d
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U shadow -d shadow_os"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  shadow_pg_data:
