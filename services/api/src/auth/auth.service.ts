@@ -45,12 +45,26 @@ export class AuthService {
     }
 
     const passwordHash = await bcrypt.hash(dto.password, BCRYPT_ROUNDS);
-    const result = await this.pool.query(
-      `INSERT INTO users (organization_id, email, password_hash, display_name)
-       VALUES ($1,$2,$3,$4)
-       RETURNING id, organization_id, email, display_name, role`,
-      [organizationId, dto.email, passwordHash, dto.displayName],
-    );
+    let result;
+    try {
+      result = await this.pool.query(
+        `INSERT INTO users (organization_id, email, password_hash, display_name)
+         VALUES ($1,$2,$3,$4)
+         RETURNING id, organization_id, email, display_name, role`,
+        [organizationId, dto.email, passwordHash, dto.displayName],
+      );
+    } catch (err) {
+      // 23505 = unique_violation. The app-level check above closes the
+      // common case, but two concurrent registrations for the same email
+      // can both pass it before either commits; the DB constraint
+      // (users_organization_id_email_key) is the real source of truth.
+      if ((err as { code?: string }).code === "23505") {
+        throw new ConflictException(
+          "A user with this email already exists in this organization.",
+        );
+      }
+      throw err;
+    }
 
     const user = result.rows[0];
     await this.audit.record({

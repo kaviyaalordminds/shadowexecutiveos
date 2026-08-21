@@ -38,8 +38,17 @@ export class AllExceptionsFilter implements ExceptionFilter {
           : (body as any)?.message ?? exception.message;
     }
 
+    const exceptionType =
+      exception instanceof Error ? exception.constructor.name : typeof exception;
+    // pg driver errors (connection failures, constraint violations, etc.)
+    // carry a Postgres error `code` that plain HttpExceptions don't — log
+    // it explicitly so "database unreachable" is obvious without having to
+    // parse the stack trace.
+    const pgCode = (exception as { code?: string } | null)?.code;
+    const dbErrorNote = pgCode ? ` pgErrorCode=${pgCode}` : "";
+
     this.logger.error(
-      `errorId=${errorId} op=${request.method} ${request.url} status=${status}`,
+      `errorId=${errorId} op=${request.method} ${request.url} status=${status} type=${exceptionType}${dbErrorNote}`,
       exception instanceof Error ? exception.stack : String(exception),
     );
 
