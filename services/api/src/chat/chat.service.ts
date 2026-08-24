@@ -10,7 +10,7 @@ import { PG_POOL } from "../database/database.module";
 import { AuditService } from "../common/audit.service";
 import { AgentsService } from "../agents/agents.service";
 import { JwtPayload } from "../auth/jwt.strategy";
-import { SendMessageDto } from "./dto/chat.dto";
+import { EvaluateInvestmentDto, ScoreLeadDto, SendMessageDto } from "./dto/chat.dto";
 
 /**
  * Chat orchestration: persists the user's message, forwards the full
@@ -108,6 +108,82 @@ export class ChatService {
     return messages.rows;
   }
 
+  /**
+   * Deterministic tool endpoints, callable directly (not only through a
+   * live LLM's tool-use decision). Both score_lead and evaluate_investment
+   * are plain rule-based arithmetic on the Python side — real, auditable
+   * results that don't depend on ANTHROPIC_API_KEY being configured, so
+   * CMO/CFO stay functional even when chat is running on the offline stub.
+   */
+  async scoreLead(user: JwtPayload, dto: ScoreLeadDto) {
+    const output = await this.callToolService("score_lead", {
+      organization_id: user.organizationId,
+      company_name: dto.companyName,
+      source_text: dto.sourceText,
+    });
+
+    const saved = await this.pool.query(
+      `INSERT INTO leads
+        (organization_id, company_name, source_text, score, score_rationale, signals, suggested_message, status, created_by)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,'SCORED',$8)
+       RETURNING id, created_at`,
+      [
+        user.organizationId,
+        dto.companyName,
+        dto.sourceText,
+        output.score,
+        output.rationale,
+        JSON.stringify(output.signals ?? []),
+        output.suggested_message,
+        user.sub,
+      ],
+    );
+
+    await this.audit.record({
+      organizationId: user.organizationId,
+      actorUserId: user.sub,
+      actorType: "agent",
+      action: "agent.tool_call",
+      resourceType: "tool",
+      resourceId: saved.rows[0].id,
+      metadata: { agentKey: "cmo_agent", tool: "score_lead", input: dto },
+    });
+
+    return { leadId: saved.rows[0].id, createdAt: saved.rows[0].created_at, ...output };
+  }
+
+  async evaluateInvestment(user: JwtPayload, dto: EvaluateInvestmentDto) {
+    const output = await this.callToolService("evaluate_investment", {
+      organization_id: user.organizationId,
+      initiative_name: dto.initiativeName,
+      initial_cost: dto.initialCost,
+      monthly_cost: dto.monthlyCost ?? 0,
+      expected_monthly_revenue: dto.expectedMonthlyRevenue ?? 0,
+      expected_monthly_savings: dto.expectedMonthlySavings ?? 0,
+      horizon_months: dto.horizonMonths ?? 12,
+    });
+
+    await this.audit.record({
+      organizationId: user.organizationId,
+      actorUserId: user.sub,
+      actorType: "agent",
+      action: "agent.tool_call",
+      resourceType: "tool",
+      metadata: { agentKey: "cfo_agent", tool: "evaluate_investment", input: dto },
+    });
+
+    return output;
+  }
+
+  async listLeads(user: JwtPayload) {
+    const result = await this.pool.query(
+      `SELECT id, company_name, score, status, created_at
+       FROM leads WHERE organization_id = $1 ORDER BY created_at DESC LIMIT 50`,
+      [user.organizationId],
+    );
+    return result.rows;
+  }
+
   private async resolveConversation(
     user: JwtPayload,
     agentId: string,
@@ -131,7 +207,15 @@ export class ChatService {
   }
 
   private async callAgentService(agentKey: string, payload: unknown): Promise<any> {
-    const url = `${this.aiServiceUrl}/internal/v1/agents/${agentKey}/chat`;
+    return this.callAiService(`/internal/v1/agents/${agentKey}/chat`, payload);
+  }
+
+  private async callToolService(toolName: string, payload: unknown): Promise<any> {
+    return this.callAiService(`/internal/v1/tools/${toolName}`, payload);
+  }
+
+  private async callAiService(path: string, payload: unknown): Promise<any> {
+    const url = `${this.aiServiceUrl}${path}`;
     try {
       const res = await fetch(url, {
         method: "POST",

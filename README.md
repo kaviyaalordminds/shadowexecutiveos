@@ -82,27 +82,36 @@ and the remaining ~25 modules.
 Prerequisites: Node 18+, Python 3.11+, PostgreSQL 14+ (or Docker).
 
 ```bash
-# 1. Database (either works)
-docker compose up -d postgres
-#   — or, if you have a local Postgres —
-createuser shadow --pwprompt   # password: shadow_dev_password (or edit .env)
-createdb shadow_os -O shadow
+# 1. Database — pick ONE of these:
+docker compose up -d postgres            # Postgres reachable on localhost:5433
+#   — or, if you have a local/native Postgres instead —
+createuser shadow --pwprompt   # password: shadow_dev_password (or your own)
+createdb shadow_os -O shadow             # Postgres reachable on whatever port yours runs (usually 5432)
 psql -d shadow_os -f database/migrations/001_init.sql
 psql -d shadow_os -f database/migrations/002_seed_cfo_agent.sql
 
-# 2. AI service
+# 2. API gateway config — REQUIRED, not optional. The gateway's default
+#    DATABASE_URL assumes the docker-compose Postgres on port 5433; if you
+#    used a local Postgres above (or any non-default setup) and skip this,
+#    every request that touches the database — including registration —
+#    fails with a 500 (ECONNREFUSED to the wrong port).
+cd services/api
+cp ../../.env.example .env
+# edit DATABASE_URL in .env to match whichever Postgres you started above
+
+# 3. AI service (new terminal)
 cd services/ai
 python3 -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 cp ../../.env.example .env   # edit ANTHROPIC_API_KEY if you have one
 uvicorn app.main:app --port 8000 --reload
 
-# 3. API gateway (new terminal)
+# 4. API gateway (new terminal)
 cd services/api
 npm install
 npm run build && npm run start   # or: npm run start:dev
 
-# 4. Web app (new terminal)
+# 5. Web app (new terminal)
 cd apps/web
 npm install
 npm run dev   # http://localhost:5173
