@@ -2,6 +2,7 @@ import {
   ConflictException,
   Inject,
   Injectable,
+  NotFoundException,
   UnauthorizedException,
 } from "@nestjs/common";
 import { JwtService } from "@nestjs/jwt";
@@ -115,6 +116,35 @@ export class AuthService {
     });
 
     return this.issueSession(user);
+  }
+
+  /**
+   * Re-reads the user from the database rather than trusting the JWT
+   * payload verbatim, so a deactivated/deleted account or a changed role
+   * is reflected immediately on the next authenticated request — this is
+   * what "session persistence" / "refresh page while logged in" actually
+   * validates against, not just that the token still decodes.
+   */
+  async me(userId: string) {
+    const result = await this.pool.query(
+      `SELECT id, organization_id, email, display_name, role, is_active
+       FROM users WHERE id = $1 AND deleted_at IS NULL`,
+      [userId],
+    );
+    if (result.rowCount === 0) {
+      throw new NotFoundException("User no longer exists.");
+    }
+    const user = result.rows[0];
+    if (!user.is_active) {
+      throw new UnauthorizedException("This account has been deactivated.");
+    }
+    return {
+      id: user.id,
+      organizationId: user.organization_id,
+      email: user.email,
+      displayName: user.display_name,
+      role: user.role,
+    };
   }
 
   private issueSession(user: {
