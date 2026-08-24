@@ -9,8 +9,11 @@ import ExecutiveShell from "./components/ExecutiveShell";
 import NetworkBackground from "./components/NetworkBackground";
 
 function LoginRoute() {
-  const { status } = useAuth();
-  if (status === "authed") return <Navigate to="/dashboard" replace />;
+  const { status, devBypass } = useAuth();
+  // In bypass mode `status` is always "authed" by design, but /login must
+  // stay directly reachable (it's only the default entry point that's
+  // bypassed, not the route itself) — so skip the redirect in that case.
+  if (status === "authed" && !devBypass) return <Navigate to="/dashboard" replace />;
   return (
     <>
       <NetworkBackground />

@@ -43,7 +43,7 @@ const REPORTS: NavEntry[] = [
  * to work.
  */
 export default function ExecutiveShell({ children }: { children: ReactNode }) {
-  const { status, user, logout } = useAuth();
+  const { status, user, devBypass, logout } = useAuth();
   const [drawerOpen, setDrawerOpen] = useState(false);
 
   if (status === "checking") {
@@ -84,6 +84,11 @@ export default function ExecutiveShell({ children }: { children: ReactNode }) {
           </div>
         </div>
         <div className="topbar-right">
+          {devBypass && (
+            <span className="badge high" title="VITE_DEV_AUTH_BYPASS=true — this is a fake local session, not a real login">
+              DEV AUTH BYPASS
+            </span>
+          )}
           <span className="system-status">
             <span className="status-dot" /> System Online
           </span>
