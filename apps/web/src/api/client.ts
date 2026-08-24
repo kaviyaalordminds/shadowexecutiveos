@@ -80,7 +80,7 @@ export interface EvaluateInvestmentResult {
 }
 
 class ApiError extends Error {
-  constructor(public status: number, message: string) {
+  constructor(public status: number, message: string, public errorId?: string) {
     super(message);
   }
 }
@@ -102,7 +102,20 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
 
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
-    throw new ApiError(res.status, body.message || `Request failed with status ${res.status}`);
+    // The backend's ValidationPipe returns `message` as string[] for
+    // validation errors (one entry per failed field) but a plain string
+    // for everything else (ConflictException, the generic 500 fallback,
+    // etc.) — normalize both into one readable string here rather than
+    // rendering a raw array or letting it stringify with bare commas.
+    let message: string = Array.isArray(body.message)
+      ? body.message.join(" ")
+      : body.message || `Request failed with status ${res.status}`;
+    // Unexpected server errors only ever carry the generic safe message —
+    // attach the errorId so it can be correlated with the backend log.
+    if (res.status >= 500 && body.errorId) {
+      message = `${message} (Error ID: ${body.errorId})`;
+    }
+    throw new ApiError(res.status, message, body.errorId);
   }
   return res.json() as Promise<T>;
 }
