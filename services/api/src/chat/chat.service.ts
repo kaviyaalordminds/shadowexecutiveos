@@ -175,6 +175,15 @@ export class ChatService {
     return output;
   }
 
+  async listLeads(user: JwtPayload) {
+    const result = await this.pool.query(
+      `SELECT id, company_name, score, status, created_at
+       FROM leads WHERE organization_id = $1 ORDER BY created_at DESC LIMIT 50`,
+      [user.organizationId],
+    );
+    return result.rows;
+  }
+
   private async resolveConversation(
     user: JwtPayload,
     agentId: string,

@@ -31,4 +31,9 @@ export class ChatController {
   evaluateInvestment(@CurrentUser() user: JwtPayload, @Body() dto: EvaluateInvestmentDto) {
     return this.chat.evaluateInvestment(user, dto);
   }
+
+  @Get("leads")
+  leads(@CurrentUser() user: JwtPayload) {
+    return this.chat.listLeads(user);
+  }
 }

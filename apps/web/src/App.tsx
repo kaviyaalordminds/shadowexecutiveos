@@ -1,29 +1,63 @@
 import { Navigate, Route, Routes } from "react-router-dom";
-import { useState } from "react";
+import { AuthProvider, useAuth } from "./AuthContext";
 import LoginPage from "./pages/LoginPage";
-import ChatPage from "./pages/ChatPage";
-import { getToken } from "./api/client";
+import CommandCenterPage from "./pages/CommandCenterPage";
+import CmoPage from "./pages/CmoPage";
+import CfoPage from "./pages/CfoPage";
+import StubAgentPage from "./pages/StubAgentPage";
+import ExecutiveShell from "./components/ExecutiveShell";
+import NetworkBackground from "./components/NetworkBackground";
+
+function LoginRoute() {
+  const { status } = useAuth();
+  if (status === "authed") return <Navigate to="/dashboard" replace />;
+  return (
+    <>
+      <NetworkBackground />
+      <LoginPage />
+    </>
+  );
+}
 
 export default function App() {
-  const [authed, setAuthed] = useState<boolean>(!!getToken());
-
   return (
-    <Routes>
-      <Route
-        path="/login"
-        element={authed ? <Navigate to="/chat" /> : <LoginPage onAuthed={() => setAuthed(true)} />}
-      />
-      <Route
-        path="/chat"
-        element={
-          authed ? (
-            <ChatPage onLogout={() => setAuthed(false)} />
-          ) : (
-            <Navigate to="/login" />
-          )
-        }
-      />
-      <Route path="*" element={<Navigate to={authed ? "/chat" : "/login"} />} />
-    </Routes>
+    <AuthProvider>
+      <Routes>
+        <Route path="/login" element={<LoginRoute />} />
+        <Route
+          path="/dashboard"
+          element={
+            <ExecutiveShell>
+              <CommandCenterPage />
+            </ExecutiveShell>
+          }
+        />
+        <Route
+          path="/agents/cmo"
+          element={
+            <ExecutiveShell>
+              <CmoPage />
+            </ExecutiveShell>
+          }
+        />
+        <Route
+          path="/agents/cfo"
+          element={
+            <ExecutiveShell>
+              <CfoPage />
+            </ExecutiveShell>
+          }
+        />
+        <Route
+          path="/agents/:key"
+          element={
+            <ExecutiveShell>
+              <StubAgentPage />
+            </ExecutiveShell>
+          }
+        />
+        <Route path="*" element={<Navigate to="/dashboard" replace />} />
+      </Routes>
+    </AuthProvider>
   );
 }
